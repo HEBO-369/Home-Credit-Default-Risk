@@ -10,7 +10,6 @@ This table contains the descriptive data of the customer and is primarily used f
 | Column Name | Calculation / Status | Source Table |
 | :--- | :--- | :--- |
 | `Customer_Key` | Derived from `application_train` | Serves as the unique Primary Key (PK) to guarantee exactly one row per real individual, resolving duplicate applications. |
-| `SK_ID_CURR` | Existing (Primary Key) | `application_train` |
 | `DAYS_BIRTH` | Existing | `application_train` |
 | `OCCUPATION_TYPE` | Existing | `application_train` |
 | `NAME_EDUCATION_TYPE` | Existing | `application_train` |
