@@ -9,6 +9,7 @@ This table contains the descriptive data of the customer and is primarily used f
 
 | Column Name | Calculation / Status | Source Table |
 | :--- | :--- | :--- |
+| `Customer_Key` | Derived from `application_train` | Serves as the unique Primary Key (PK) to guarantee exactly one row per real individual, resolving duplicate applications. |
 | `SK_ID_CURR` | Existing (Primary Key) | `application_train` |
 | `DAYS_BIRTH` | Existing | `application_train` |
 | `OCCUPATION_TYPE` | Existing | `application_train` |
@@ -48,6 +49,7 @@ This is the central table (Feature Matrix). It contains the raw numbers necessar
 
 | Column Name | Calculation / Status | Source Table | Business Rationale (Why we added it) |
 | :--- | :--- | :--- | :--- |
+| `Customer_Key` | **NEW (Foreign Key)**: Mapped from `Dim_Customer` | `Dim_Customer` | Links the specific loan application to the unique customer profile in the dimension table. |
 | `DTI` | `AMT_CREDIT` / `AMT_INCOME_TOTAL` | `application_train` | Measures financial burden; a high ratio indicates potential struggle to repay. |
 | `Annuity_to_Income` | `AMT_ANNUITY` / `AMT_INCOME_TOTAL` | `application_train` | Assesses if the regular loan installment is affordable given the customer's income. |
 | `LTV` | `AMT_CREDIT` / `AMT_GOODS_PRICE` | `application_train` | Evaluates collateral risk; high LTV means the loan exceeds the asset's actual value. |
