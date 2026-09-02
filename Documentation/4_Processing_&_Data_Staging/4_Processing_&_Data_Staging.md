@@ -28,8 +28,8 @@ exit
 
 ---
 
-### Step 5.2: Spark Session Initialization & Schema Definition
-From the Jupyter Notebook, we initialize a SparkSession and define strict schema definitions for each raw table to ensure type safety and prevent schema-inference overhead.
+### Step 5.2: Spark Session Initialization 
+From the Jupyter Notebook, we initialize a SparkSession.
 
 ```python
 from pyspark.sql import SparkSession
@@ -38,68 +38,71 @@ from pyspark.sql import functions as F
 
 # Initialize Spark Session
 spark = SparkSession.builder \
-    .appName("HomeCredit_Data_Staging") \
+    .appName("HomeCredit_Serving_Layer") \
+    .enableHiveSupport() \
     .getOrCreate()
-
-# 1. Main Application Schema
-schema_app = StructType([
-    StructField("SK_ID_CURR", IntegerType(), True), 
-    StructField("TARGET", IntegerType(), True),
-    StructField("NAME_CONTRACT_TYPE", StringType(), True), 
-    StructField("DAYS_BIRTH", IntegerType(), True),
-    StructField("OCCUPATION_TYPE", StringType(), True), 
-    StructField("NAME_EDUCATION_TYPE", StringType(), True),
-    StructField("NAME_FAMILY_STATUS", StringType(), True), 
-    StructField("NAME_HOUSING_TYPE", StringType(), True),
-    StructField("NAME_INCOME_TYPE", StringType(), True), 
-    StructField("FLAG_OWN_REALTY", StringType(), True),
-    StructField("AMT_INCOME_TOTAL", DoubleType(), True), 
-    StructField("AMT_CREDIT", DoubleType(), True),
-    StructField("AMT_ANNUITY", DoubleType(), True), 
-    StructField("AMT_GOODS_PRICE", DoubleType(), True),
-    StructField("DAYS_EMPLOYED", IntegerType(), True)
-])
-
-# 2. Previous Applications Schema
-schema_prev = StructType([
-    StructField("SK_ID_PREV", IntegerType(), True), 
-    StructField("SK_ID_CURR", IntegerType(), True),
-    StructField("NAME_CONTRACT_STATUS", StringType(), True), 
-    StructField("AMT_CREDIT", DoubleType(), True)
-])
-
-# 3. Installments Payments Schema
-schema_inst = StructType([
-    StructField("SK_ID_PREV", IntegerType(), True), 
-    StructField("SK_ID_CURR", IntegerType(), True),
-    StructField("DAYS_INSTALMENT", DoubleType(), True), 
-    StructField("DAYS_ENTRY_PAYMENT", DoubleType(), True),
-    StructField("AMT_INSTALMENT", DoubleType(), True), 
-    StructField("AMT_PAYMENT", DoubleType(), True)
-])
-
-# 4. Bureau Data Schema
-schema_bureau = StructType([
-    StructField("SK_ID_CURR", IntegerType(), True), 
-    StructField("CREDIT_ACTIVE", StringType(), True),
-    StructField("AMT_CREDIT_SUM_DEBT", DoubleType(), True), 
-    StructField("AMT_CREDIT_SUM_OVERDUE", DoubleType(), True),
-    StructField("AMT_CREDIT_MAX_OVERDUE", DoubleType(), True), 
-    StructField("AMT_CREDIT_SUM", DoubleType(), True)
-])
 ```
 
 ---
 
 ### Step 5.3: Reading Raw Data & Data Cleaning
-We load the raw CSV files from HDFS using the defined schemas, remove duplicate records based on primary keys, and filter out null primary keys to maintain data integrity.
-
+We load the raw Parquet files from HDFS (which natively retain the original MySQL schema). We then explicitly select and cast the required columns to ensure machine learning and BI readiness, remove duplicate records, and filter out null primary keys to maintain data integrity.
 ```python
 # Load raw data from HDFS
-df_app = spark.read.schema(schema_app).csv("/user/student/home_credit/raw/application_train/*")
-df_prev = spark.read.schema(schema_prev).csv("/user/student/home_credit/raw/previous_application/*")
-df_inst = spark.read.schema(schema_inst).csv("/user/student/home_credit/raw/installments_payments/*")
-df_bureau = spark.read.schema(schema_bureau).csv("/user/student/home_credit/raw/bureau/*")
+raw_app = spark.read.parquet("/user/student/home_credit/raw/application_train")
+raw_prev = spark.read.parquet("/user/student/home_credit/raw/previous_application")
+raw_inst = spark.read.parquet("/user/student/home_credit/raw/installments_payments")
+raw_bureau = spark.read.parquet("/user/student/home_credit/raw/bureau")
+
+# Select required columns and enforce strict analytical data types
+
+# 1. Application Train
+df_app = raw_app.select(
+    F.col("SK_ID_CURR").cast("int"),
+    F.col("TARGET").cast("int"),
+    F.col("NAME_CONTRACT_TYPE").cast("string"),
+    F.col("DAYS_BIRTH").cast("int"),
+    F.col("OCCUPATION_TYPE").cast("string"),
+    F.col("NAME_EDUCATION_TYPE").cast("string"),
+    F.col("NAME_FAMILY_STATUS").cast("string"),
+    F.col("NAME_HOUSING_TYPE").cast("string"),
+    F.col("NAME_INCOME_TYPE").cast("string"),
+    F.col("FLAG_OWN_REALTY").cast("string"),
+    F.col("AMT_INCOME_TOTAL").cast("double"),
+    F.col("AMT_CREDIT").cast("double"),
+    F.col("AMT_ANNUITY").cast("double"),
+    F.col("AMT_GOODS_PRICE").cast("double"),
+    F.col("DAYS_EMPLOYED").cast("int")
+)
+
+# 2. Previous Applications
+df_prev = raw_prev.select(
+    F.col("SK_ID_PREV").cast("int"),
+    F.col("SK_ID_CURR").cast("int"),
+    F.col("NAME_CONTRACT_STATUS").cast("string"),
+    F.col("AMT_CREDIT").cast("double")
+)
+
+# 3. Installments Payments
+df_inst = raw_inst.select(
+    F.col("SK_ID_PREV").cast("int"),
+    F.col("SK_ID_CURR").cast("int"),
+    F.col("DAYS_INSTALMENT").cast("double"),
+    F.col("DAYS_ENTRY_PAYMENT").cast("double"),
+    F.col("AMT_INSTALMENT").cast("double"),
+    F.col("AMT_PAYMENT").cast("double")
+)
+
+# 4. Bureau Data
+df_bureau = raw_bureau.select(
+    F.col("SK_ID_CURR").cast("int"),
+    F.col("CREDIT_ACTIVE").cast("string"),
+    F.col("AMT_CREDIT_SUM_DEBT").cast("double"),
+    F.col("AMT_CREDIT_SUM_OVERDUE").cast("double"),
+    F.col("AMT_CREDIT_MAX_OVERDUE").cast("double"),
+    F.col("AMT_CREDIT_SUM").cast("double")
+)
+
 
 # Data Cleaning (Drop duplicates & ensure primary keys are not null)
 clean_app = df_app.dropDuplicates(["SK_ID_CURR"]).filter(F.col("SK_ID_CURR").isNotNull())
@@ -120,4 +123,4 @@ clean_inst.write.mode("overwrite").parquet("/user/student/home_credit/staging/in
 clean_bureau.write.mode("overwrite").parquet("/user/student/home_credit/staging/bureau")
 ```
 
-> **Note for teammates:** Subsequent feature engineering pipelines can directly load from `/user/student/home_credit/staging/` without processing raw CSVs.
+> **Note for teammates:** Subsequent feature engineering pipelines can directly load from `/user/student/home_credit/staging/` without processing raw ingestion files.
