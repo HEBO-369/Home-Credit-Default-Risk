@@ -70,7 +70,8 @@ sqoop import \
   --table application_train \
   --target-dir /user/student/home_credit/raw/application_train \
   --delete-target-dir \
-  -m 1
+  -m 1 \
+  --as-parquetfile
 
 # 2. Import previous_application (~1.67M rows)
 sqoop import \
@@ -80,7 +81,8 @@ sqoop import \
   --table previous_application \
   --target-dir /user/student/home_credit/raw/previous_application \
   --delete-target-dir \
-  -m 1
+  -m 1 \
+  --as-parquetfile
 
 # 3. Import bureau (~1.71M rows)
 sqoop import \
@@ -90,7 +92,8 @@ sqoop import \
   --table bureau \
   --target-dir /user/student/home_credit/raw/bureau \
   --delete-target-dir \
-  -m 1
+  -m 1 \
+  --as-parquetfile
 
 # 4. Import installments_payments (~13.6M rows)
 sqoop import \
@@ -100,7 +103,8 @@ sqoop import \
   --table installments_payments \
   --target-dir /user/student/home_credit/raw/installments_payments \
   --delete-target-dir \
-  -m 1
+  -m 1 \
+  --as-parquetfile
 ```
 
 ---
