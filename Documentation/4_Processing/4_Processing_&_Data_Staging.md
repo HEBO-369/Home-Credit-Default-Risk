@@ -1,7 +1,7 @@
-## 5. Distributed Processing & Data Staging (PySpark)
+## 5. Distributed Processing & Data Selection (PySpark)
 
 ### Overview
-After successfully ingesting the raw relational tables from MySQL to HDFS via Apache Sqoop, we establish proper multi-user permission separation and leverage PySpark on the Hadoop/YARN cluster to initialize schemas, clean the raw records, and export them into a high-performance **Staging Layer (Parquet format)**. This provides a clean, optimized foundation for the team to perform downstream Feature Engineering and Star Schema modeling without repeatedly reading raw CSV files.
+After successfully ingesting the raw relational tables from MySQL to HDFS via Apache Sqoop, we establish proper multi-user permission separation and leverage PySpark on the Hadoop/YARN cluster to initialize schemas. We then load the raw records and explicitly select the required columns to prepare them for the cleaning phase.
 
 ---
 
@@ -45,7 +45,7 @@ spark = SparkSession.builder \
 
 ---
 
-### Step 5.3: Reading Raw Data & Data Cleaning
+### Step 5.3: Reading Raw Data & Column Selection
 We load the raw Parquet files from HDFS (which natively retain the original MySQL schema). We then explicitly select and cast the required columns to ensure machine learning and BI readiness, remove duplicate records, and filter out null primary keys to maintain data integrity.
 ```python
 # Load raw data from HDFS
@@ -104,23 +104,4 @@ df_bureau = raw_bureau.select(
 )
 
 
-# Data Cleaning (Drop duplicates & ensure primary keys are not null)
-clean_app = df_app.dropDuplicates(["SK_ID_CURR"]).filter(F.col("SK_ID_CURR").isNotNull())
-clean_prev = df_prev.dropDuplicates(["SK_ID_PREV"]).filter(F.col("SK_ID_CURR").isNotNull())
-clean_inst = df_inst.dropDuplicates().filter(F.col("SK_ID_CURR").isNotNull())
-clean_bureau = df_bureau.dropDuplicates().filter(F.col("SK_ID_CURR").isNotNull())
 ```
-
----
-
-### Step 5.4: Staging Layer Export (Parquet Format)
-The cleaned DataFrames are written back to HDFS in Parquet format under the staging zone. Parquet provides columnar compression and fast read performance, acting as the clean handoff point for the Feature Engineering team.
-
-```python
-clean_app.write.mode("overwrite").parquet("/user/student/home_credit/staging/application_train")
-clean_prev.write.mode("overwrite").parquet("/user/student/home_credit/staging/previous_application")
-clean_inst.write.mode("overwrite").parquet("/user/student/home_credit/staging/installments_payments")
-clean_bureau.write.mode("overwrite").parquet("/user/student/home_credit/staging/bureau")
-```
-
-> **Note for teammates:** Subsequent feature engineering pipelines can directly load from `/user/student/home_credit/staging/` without processing raw ingestion files.
