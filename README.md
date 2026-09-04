@@ -1,75 +1,79 @@
-# Data Modeling & Star Schema (Home Credit Default Risk)
+# Home Credit Default Risk — End-to-End Big Data Engineering Pipeline
 
-This document outlines the final Star Schema design for our Data Engineering pipeline. It consists of a Dimension table for descriptive customer data (used for Power BI dashboards) and a Fact table containing both raw and engineered numeric features (used for Machine Learning).
+
+**An end-to-end Big Data Engineering pipeline that takes the raw, relational **Home Credit Default Risk** dataset all the way from a MySQL operational database to a production-style Data Warehouse on Hadoop/Hive, and finally into a Machine Learning model that predicts loan default risk.**
+
+Data Link : https://www.kaggle.com/c/home-credit-default-risk
+---
+
+## Why This Project?
+
+The Home Credit dataset presents the same kind of challenges Data Engineers face in the real world: several large, normalized relational tables (millions of rows each) that need to be transformed into something a data warehouse and a machine learning model can actually consume. Rather than treating this as a single flat CSV-to-model exercise, this project was built as a full production-style pipeline — starting from raw operational data sitting in a MySQL database, moving it through a distributed Hadoop ecosystem (HDFS, Sqoop, PySpark, Hive), and only then handing off a clean, feature-rich, one-row-per-customer dataset to the modeling stage. The goal throughout was to mirror how a real Big Data / MLOps team would design this: strict schema enforcement, idempotent and repeatable ingestion jobs, grain-safe aggregations that avoid data explosion, an optimized columnar storage layer, and a final predictive model built on top of engineered, business-meaningful features — all so the resulting dataset can serve both Machine Learning (default-risk scoring) and Business Intelligence (dashboards and reporting) use cases from a single, trustworthy source of truth.
 
 ---
 
-## 1. Dimension Table: `Dim_Customer`
-This table contains the descriptive data of the customer and is primarily used for filters (Slicers) in the Power BI dashboard.
+## Pipeline Architecture
 
-| Column Name | Calculation / Status | Source Table |
-| :--- | :--- | :--- |
-| `Customer_Key` | Derived from `application_train` | Serves as the unique Primary Key (PK) to guarantee exactly one row per real individual, resolving duplicate applications. |
-| `DAYS_BIRTH` | Existing | `application_train` |
-| `OCCUPATION_TYPE` | Existing | `application_train` |
-| `NAME_EDUCATION_TYPE` | Existing | `application_train` |
-| `NAME_FAMILY_STATUS` | Existing | `application_train` |
-| `NAME_HOUSING_TYPE` | Existing | `application_train` |
-| `NAME_INCOME_TYPE` | Existing | `application_train` |
-| `FLAG_OWN_REALTY` | Existing | `application_train` |
+```
+MySQL (Docker)  →  Apache Sqoop  →  HDFS (raw zone)  →  PySpark  →  Staging Layer (Parquet)
+                                                                          │
+                                                                          ▼
+                                                        Feature Engineering (grouped aggregations)
+                                                                          │
+                                                                          ▼
+                                              Hive Star Schema — Dim_Customer & Fact_Loan (Parquet + Snappy)
+                                                                          │
+                                                                          ▼
+                                                 Predictive Modeling (Python / scikit-learn / XGBoost)
+```
+
+The pipeline is organized into eight sequential phases, each with strict multi-user permission separation and data-integrity checks across the cluster:
+
+1. **Data Modeling & Star Schema Design** — designing a Dimension table (`Dim_Customer`) and a Fact table (`Fact_Loan`) to avoid Cartesian joins and cluster memory overload.
+2. **Database Setup & Bulk Ingestion** — loading the raw CSVs (`application_train`, `bureau`, `previous_application`, `installments_payments`) into a MySQL instance running in Docker, using strict DDL and high-throughput `LOAD DATA LOCAL INFILE`.
+3. **Big Data Ingestion (HDFS & Apache Sqoop)** — extracting the MySQL tables into HDFS as Parquet via Sqoop MapReduce jobs, bridging the operational database host and the Hadoop cluster over the network.
+4. **Distributed Processing & Data Selection (PySpark)** — initializing a Spark session with Hive support and projecting only the columns needed, with strict type casting.
+5. **Data Cleaning & Staging Layer** — dynamic empty-string-to-NULL conversion, deduplication, referential-integrity filtering, and business-logic/anomaly correction, exported to a Parquet staging layer.
+6. **Distributed Feature Engineering & Aggregation** — customer-grain-safe `groupBy` aggregations across the historical tables (previous applications, installments, bureau) plus cross-table composite features.
+7. **Data Warehouse Serving Layer (Star Schema)** — splitting the unified dataset into `Dim_Customer` and `Fact_Loan`, writing to HDFS as partitioned, Snappy-compressed Parquet, and registering both tables in the Hive Metastore.
+8. **Predictive Modeling & Machine Learning** — training and evaluating a default-risk classifier on the engineered warehouse tables.
 
 ---
 
-## 2. Fact Table: `Fact_Loan`
-This is the central table (Feature Matrix). It contains the raw numbers necessary for the AI model as well as the computed columns (Feature Engineering) that the team will create through GroupBy and Join operations.
+## Tech Stack
 
-### A. Raw Columns (Taken as is)
-| Column Name | Calculation / Status | Source Table |
-| :--- | :--- | :--- |
-| `SK_ID_CURR` | Existing (Join Key) | `application_train` |
-| `TARGET` | Existing (Target Label) | `application_train` |
-| `NAME_CONTRACT_TYPE` | Existing | `application_train` |
-| `AMT_INCOME_TOTAL` | Existing | `application_train` |
-| `AMT_CREDIT` | Existing | `application_train` |
-| `AMT_ANNUITY` | Existing | `application_train` |
-| `AMT_GOODS_PRICE` | Existing | `application_train` |
-| `DAYS_EMPLOYED` | Existing | `application_train` |
-| `DAYS_BIRTH` | Existing (Age as a numeric value for the ML model) | `application_train` |
+| Layer | Technologies |
+|---|---|
+| **Operational Database** | MySQL (containerized with Docker) |
+| **Big Data Ingestion** | Apache Sqoop (MapReduce-based extraction) |
+| **Distributed Storage** | Hadoop HDFS |
+| **Distributed Processing** | Apache Spark (PySpark) |
+| **Data Warehouse** | Apache Hive (Metastore, Star Schema, HiveQL/DDL) |
+| **Storage Format** | Apache Parquet with Snappy compression, Hive-style partitioning |
+| **Machine Learning** | Python, pandas, NumPy, scikit-learn, XGBoost |
+| **Visualization / Evaluation** | Matplotlib, Seaborn |
+| **Environment** | Docker, Linux, YARN (cluster resource management) |
 
-> 🛑 **CRITICAL WARNING - READ BEFORE WRITING ANY CODE!** 🛑
-> 
-> **DO NOT**, under any circumstances, attempt to join the secondary tables (`previous_application`, `installments_payments`, `bureau`) directly to the main table as they are. 
-> 
-> You **ABSOLUTELY MUST** perform a `GroupBy("SK_ID_CURR")` on these tables FIRST to aggregate the data. Ensure that your output DataFrame has exactly **ONE row per customer** before sending it for the final Join. 
-> 
-> Skipping this step will result in a massive Many-to-Many data explosion, duplicate records, and will immediately CRASH our entire PySpark pipeline due to memory overload!
-> 
-### B. Engineered Features (Requires PySpark processing)
+---
 
-| Column Name | Calculation / Status | Source Table | Business Rationale (Why we added it) |
-| :--- | :--- | :--- | :--- |
-| `Customer_Key` | **NEW (Foreign Key)**: Mapped from `Dim_Customer` | `Dim_Customer` | Links the specific loan application to the unique customer profile in the dimension table. |
-| `DTI` | `AMT_CREDIT` / `AMT_INCOME_TOTAL` | `application_train` | Measures financial burden; a high ratio indicates potential struggle to repay. |
-| `Annuity_to_Income` | `AMT_ANNUITY` / `AMT_INCOME_TOTAL` | `application_train` | Assesses if the regular loan installment is affordable given the customer's income. |
-| `LTV` | `AMT_CREDIT` / `AMT_GOODS_PRICE` | `application_train` | Evaluates collateral risk; high LTV means the loan exceeds the asset's actual value. |
-| `Employed_to_Age` | `DAYS_EMPLOYED` / `DAYS_BIRTH` | `application_train` | Indicates employment stability relative to the applicant's age. |
-| `Prev_App_Count` | `COUNT(SK_ID_PREV)` per `SK_ID_CURR` | `previous_application` | Shows the customer's historical reliance on Home Credit loans. |
-| `Approved_App_Ratio` | `COUNT(STATUS == Approved)` / `Prev_App_Count` | `previous_application` | Reflects the customer's historical creditworthiness and success rate with us. |
-| `Refused_App_Ratio` | `COUNT(STATUS == Refused)` / `Prev_App_Count` | `previous_application` | Highlights past rejections, which is a strong indicator of historical risk. |
-| `Avg_Prev_Credit` | `AVG(AMT_CREDIT)` for previous loans | `previous_application` | Establishes a baseline for the customer's typical borrowing size. |
-| `Total_Days_Past_Due` | `SUM(MAX(DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT, 0))` | `installments_payments` | Quantifies the overall severity of historical payment delays. |
-| `Num_Late_Payments` | `COUNT(DAYS_ENTRY_PAYMENT > DAYS_INSTALMENT)` | `installments_payments` | Indicates the frequency of poor repayment behavior and lack of discipline. |
-| `Avg_Days_Past_Due` | `AVG(MAX(DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT, 0))` | `installments_payments` | Shows the typical delay length, differentiating chronic lateness from minor slips. |
-| `Max_Days_Past_Due` | `MAX(DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT)` | `installments_payments` | Identifies the worst-case historical default behavior for this customer. |
-| `Total_Underpaid` | `SUM(MAX(AMT_INSTALMENT - AMT_PAYMENT, 0))` | `installments_payments` | Highlights situations where the customer consistently paid less than expected. |
-| `Payment_Ratio` | `SUM(AMT_PAYMENT)` / `SUM(AMT_INSTALMENT)` | `installments_payments` | Measures overall repayment discipline (1.0 = perfect, < 1.0 = underpaying). |
-| `Bureau_Active_Loans`| `COUNT(CREDIT_ACTIVE == 'Active')` | `bureau` | Shows the customer's current active exposure to other external lenders. |
-| `Total_External_Debt` | `SUM(AMT_CREDIT_SUM_DEBT)` | `bureau` | Quantifies the total financial obligation outside of Home Credit. |
-| `Total_External_Overdue`| `SUM(AMT_CREDIT_SUM_OVERDUE)` | `bureau` | Strong risk signal showing the exact amount currently defaulted with other lenders. |
-| `Max_External_Overdue` | `MAX(AMT_CREDIT_MAX_OVERDUE)` | `bureau` | Highlights the worst external default, indicating severe financial distress. |
-| `Debt_to_Credit_Bureau`| `SUM(AMT_CREDIT_SUM_DEBT)` / `SUM(AMT_CREDIT_SUM)` | `bureau` | Indicates credit utilization across all external accounts. |
-| `External_DTI` | `Total_External_Debt` / `AMT_INCOME_TOTAL` | `bureau` + `application_train` | Measures total external debt burden against the customer's actual income. |
-| `Current_vs_Prev_Credit` | `AMT_CREDIT` / `Avg_Prev_Credit` | `app_train` + `previous_app` | Detects unusual borrowing behavior (e.g., requesting significantly more than usual). |
-| `Total_Overall_Debt` | `AMT_CREDIT` + `Total_External_Debt` | `app_train` + `bureau` | Provides the complete, combined debt picture (Home Credit + external lenders). |
-| `Annuity_vs_Historical_Payment`| `AMT_ANNUITY` / `AVG(AMT_PAYMENT)` | `app_train` + `installments` | Checks if the new payment is realistic compared to what they historically afforded. |
+## Data Model — Star Schema
 
+The engineered dataset is served as a Star Schema with strict `SK_ID_CURR`-grain enforcement (one row per customer):
+
+- **`Dim_Customer`** — descriptive/categorical attributes (gender, education, family status, housing type, income type, etc.) used for BI slicing and dashboards.
+- **`Fact_Loan`** — the numerical feature matrix used for Machine Learning, combining raw application fields with engineered features such as debt-to-income ratio, loan-to-value ratio, historical approval/refusal ratios, repayment-discipline metrics, and external bureau credit exposure.
+
+Every historical table (previous applications, installment payments, bureau records) is aggregated to the customer grain **before** joining onto the main fact table, which prevents the Cartesian-product "data explosion" that a naive direct join would cause.
+
+---
+
+## Machine Learning
+
+The final phase consumes the Hive-partitioned warehouse tables to train a default-risk classifier:
+
+- Data is loaded directly from the partitioned Parquet warehouse (Hive-style `NAME_CONTRACT_TYPE=*` partitions), deduplicated, and merged into a single customer-level DataFrame.
+- Categorical features are one-hot encoded; numerical features are standardized on the training split only, to avoid leakage.
+- Because defaults make up only a small fraction of the data, the class imbalance is addressed explicitly (cost-sensitive weighting / resampling) rather than being ignored.
+- The model is evaluated with metrics suited to imbalanced classification — ROC-AUC, confusion matrix, and a full classification report — rather than relying on plain accuracy.
+
+---
