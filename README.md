@@ -1,7 +1,7 @@
 # Home Credit Default Risk — End-to-End Big Data Engineering Pipeline
 
 
-**An end-to-end Big Data Engineering pipeline that takes the raw, relational **Home Credit Default Risk** dataset all the way from a MySQL operational database to a production-style Data Warehouse on Hadoop/Hive, and finally into a Machine Learning model that predicts loan default risk.**
+**An end-to-end Big Data Engineering pipeline that takes the raw, relational Home Credit Default Risk dataset all the way from a MySQL operational database to a production-style Data Warehouse on Hadoop/Hive, and finally into a Machine Learning model that predicts loan default risk and a Power BI Dashboard for business intelligence.**
 
 Data Link : https://www.kaggle.com/c/home-credit-default-risk
 ---
@@ -23,8 +23,9 @@ MySQL (Docker)  →  Apache Sqoop  →  HDFS (raw zone)  →  PySpark  →  Stag
                                                                           ▼
                                               Hive Star Schema — Dim_Customer & Fact_Loan (Parquet + Snappy)
                                                                           │
-                                                                          ▼
-                                                 Predictive Modeling (Python / scikit-learn / XGBoost)
+                                    ┌─────────────────────────────────────┴─────────────────────────────────────┐
+                                    ▼                                                                           ▼
+           Predictive Modeling (Python / scikit-learn / XGBoost)                              Business Intelligence (Power BI)
 ```
 
 The pipeline is organized into eight sequential phases, each with strict multi-user permission separation and data-integrity checks across the cluster:
@@ -37,6 +38,7 @@ The pipeline is organized into eight sequential phases, each with strict multi-u
 6. **Distributed Feature Engineering & Aggregation** — customer-grain-safe `groupBy` aggregations across the historical tables (previous applications, installments, bureau) plus cross-table composite features.
 7. **Data Warehouse Serving Layer (Star Schema)** — splitting the unified dataset into `Dim_Customer` and `Fact_Loan`, writing to HDFS as partitioned, Snappy-compressed Parquet, and registering both tables in the Hive Metastore.
 8. **Predictive Modeling & Machine Learning** — training and evaluating a default-risk classifier on the engineered warehouse tables.
+9. **Business Intelligence & Dashboarding** — connecting Power BI to the Hive Data Warehouse to visualize key risk metrics and demographic trends.
 
 ---
 
@@ -51,7 +53,7 @@ The pipeline is organized into eight sequential phases, each with strict multi-u
 | **Data Warehouse** | Apache Hive (Metastore, Star Schema, HiveQL/DDL) |
 | **Storage Format** | Apache Parquet with Snappy compression, Hive-style partitioning |
 | **Machine Learning** | Python, pandas, NumPy, scikit-learn, XGBoost |
-| **Visualization / Evaluation** | Matplotlib, Seaborn |
+| **Visualization / BI** | Power BI, Matplotlib, Seaborn |
 | **Environment** | Docker, Linux, YARN (cluster resource management) |
 
 ---
@@ -64,6 +66,16 @@ The engineered dataset is served as a Star Schema with strict `SK_ID_CURR`-grain
 - **`Fact_Loan`** — the numerical feature matrix used for Machine Learning, combining raw application fields with engineered features such as debt-to-income ratio, loan-to-value ratio, historical approval/refusal ratios, repayment-discipline metrics, and external bureau credit exposure.
 
 Every historical table (previous applications, installment payments, bureau records) is aggregated to the customer grain **before** joining onto the main fact table, which prevents the Cartesian-product "data explosion" that a naive direct join would cause.
+
+---
+## Business Intelligence & Dashboarding
+
+To complete the end-to-end pipeline, a BI serving layer was implemented using Power BI. The dashboard directly consumes the optimized Data Warehouse tables, utilizing Dim_Customer for interactive filtering and Fact_Loan for aggregating numerical risk metrics.
+Key Dashboard Insights:
+- **High-Level KPIs:** Tracks 308K total applications with an overall Payment Difficulty Rate (Default Risk) of 8.1%, alongside average income and credit amounts.
+- **Demographic Risk Factors:** Highlights a clear trend where younger applicants (20-29 years) carry the highest risk (11.4%), which steadily declines to just 4.9% for applicants aged 60 and above.
+- **Income Type Impact:** Demonstrates that the 'Working' class represents the highest application volume and elevated risk, whereas 'Pensioners' show the lowest payment difficulty rate, indicating high financial stability.
+- **Interactive Slicing:** Enables seamless drill-downs into specific applicant sub-segments based on gender, education level, and contract type.
 
 ---
 
